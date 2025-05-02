@@ -1,0 +1,58 @@
+# Build artifacts
+*.o
+*.obj
+*.lo
+*.slo
+*.la
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+
+# macOS debug symbols
+*.dSYM/
+
+# Precompiled headers
+*.gch
+*.pch
+
+# CMake build directories
+/build/
+[Cc]MakeCache.txt
+[Cc]MakeFiles/
+Makefile
+cmake_install.cmake
+CTestTestfile.cmake
+CMakeLists.txt.user
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# IDEs
+*.sublime-project
+*.sublime-workspace
+.idea/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Backup and temporary files
+*~
+*.bak
+*.swp
+*.tmp
+*.log
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sdf
+*.ncb
+*.opensdf

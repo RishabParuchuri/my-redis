@@ -7,13 +7,47 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+const size_t k_max_msg = 4096;
+
 static void die(const char *msg)
 {
     fprintf(stderr, "[%d] %s\n", errno, msg);
     abort();
 }
 
-static void test_connection(int connfd)
+static int32_t read_full(int fd, char *buf, size_t n)
+{
+    while (n > 0)
+    {
+        ssize_t rv = read(fd, buf, n);
+        if (rv <= 0)
+        {
+            return -1;
+        }
+        assert((size_t)rv <= n);
+        n -= (size_t)rv;
+        buf += (size_t)rv;
+    }
+    return 0;
+}
+
+static int32_t write_full(int fd, char *buf, size_t n)
+{
+    while (n > 0)
+    {
+        ssize_t rv = write(fd, buf, n);
+        if (rv <= 0)
+        {
+            return -1;
+        }
+        assert((size_t)rv <= n);
+        n -= (size_t)rv;
+        buf += (size_t)rv;
+    }
+    return 0;
+}
+
+static int32_t request(int connfd)
 {
     char rbuf[64] = {};
     ssize_t n = recv(connfd, rbuf, sizeof(rbuf) - 1, 0);
@@ -72,7 +106,14 @@ int main()
         }
 
         // implement business logic
-        test_connection(connfd);
+        while (true)
+        {
+            int32_t err = request(connfd);
+            if (err)
+            {
+                break;
+            }
+        }
         close(connfd);
     }
 }
