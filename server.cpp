@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-const size_t k_max_msg = 4096;
+const size_t K_MAX_MSG = 4096;
 
 static void die(const char *msg)
 {
@@ -17,6 +17,7 @@ static void die(const char *msg)
 
 static int32_t read_full(int fd, char *buf, size_t n)
 {
+    // Basically continuously decrement until whole stream is read
     while (n > 0)
     {
         ssize_t rv = read(fd, buf, n);
