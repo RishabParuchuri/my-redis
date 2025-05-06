@@ -7,10 +7,51 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+const size_t K_MAX_MSG = 4096;
+
 static void die(const char *msg)
 {
     fprintf(stderr, "[%d] %s\n", errno, msg);
     abort();
+}
+
+static int32_t read_full(int fd, char *buf, size_t n)
+{
+    // Basically continuously decrement until whole stream is read
+    while (n > 0)
+    {
+        ssize_t rv = read(fd, buf, n);
+        if (rv <= 0)
+        {
+            return -1;
+        }
+        assert((size_t)rv <= n);
+        n -= (size_t)rv;
+        buf += (size_t)rv;
+    }
+    return 0;
+}
+
+static int32_t write_full(int fd, char *buf, size_t n)
+{
+    while (n > 0)
+    {
+        ssize_t rv = write(fd, buf, n);
+        if (rv <= 0)
+        {
+            return -1;
+        }
+        assert((size_t)rv <= n);
+        n -= (size_t)rv;
+        buf += (size_t)rv;
+    }
+    return 0;
+}
+
+static int32_t query(int fd, char *text)
+{
+    uint32_t len = (u_int32_t)strlen(text);
+    if (len > maxk)
 }
 
 int main()
