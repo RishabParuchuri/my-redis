@@ -68,7 +68,7 @@ static int32_t request(int connfd)
 
     int32_t len = 0;
     memcpy(&len, rbuf, 4);
-    if (len > K_MAX_MSG)
+    if (len > (int32_t)K_MAX_MSG)
     {
         msg("Message too long!");
         return -1;
