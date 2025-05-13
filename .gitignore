@@ -26,12 +26,6 @@ server
 
 # CMake build directories
 /build/
-[Cc]MakeCache.txt
-[Cc]MakeFiles/
-Makefile
-cmake_install.cmake
-CTestTestfile.cmake
-CMakeLists.txt.user
 
 # Visual Studio Code
 .vscode/
