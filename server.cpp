@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <vector>
 
 const size_t K_MAX_MSG = 4096;
 
@@ -22,44 +23,44 @@ static void die(const char *msg)
     abort();
 }
 
-static int32_t read_full(int fd, char *buf, size_t n)
+static int32_t read_full(int fd, char *buffer, size_t n)
 {
     // Basically continuously decrement until whole stream is read
     while (n > 0)
     {
-        ssize_t rv = read(fd, buf, n);
-        if (rv <= 0)
+        ssize_t bytesRead = read(fd, buffer, n);
+        if (bytesRead <= 0)
         {
             return -1;
         }
-        assert((size_t)rv <= n);
-        n -= (size_t)rv;
-        buf += (size_t)rv;
+        assert((size_t)bytesRead <= n);
+        n -= (size_t)bytesRead;
+        buffer += (size_t)bytesRead;
     }
     return 0;
 }
 
-static int32_t write_full(int fd, char *buf, size_t n)
+static int32_t write_full(int fd, char *buffer, size_t n)
 {
     while (n > 0)
     {
-        ssize_t rv = write(fd, buf, n);
-        if (rv <= 0)
+        ssize_t bytesRead = write(fd, buffer, n);
+        if (bytesRead <= 0)
         {
             return -1;
         }
-        assert((size_t)rv <= n);
-        n -= (size_t)rv;
-        buf += (size_t)rv;
+        assert((size_t)bytesRead <= n);
+        n -= (size_t)bytesRead;
+        buffer += (size_t)bytesRead;
     }
     return 0;
 }
 
 static int32_t request(int connfd)
 {
-    char rbuf[4 + K_MAX_MSG];
+    char readBuffer[4 + K_MAX_MSG];
     errno = 0;
-    int32_t err = read_full(connfd, rbuf, 4);
+    int32_t err = read_full(connfd, readBuffer, 4);
     if (err)
     {
         msg(errno == 0 ? "EOF" : "read() error");
@@ -67,7 +68,7 @@ static int32_t request(int connfd)
     }
 
     int32_t len = 0;
-    memcpy(&len, rbuf, 4);
+    memcpy(&len, readBuffer, 4);
     if (len > (int32_t)K_MAX_MSG)
     {
         msg("Message too long!");
@@ -75,21 +76,21 @@ static int32_t request(int connfd)
     }
 
     // get the body of the request
-    err = read_full(connfd, &rbuf[4], len);
+    err = read_full(connfd, &readBuffer[4], len);
     if (err)
     {
         msg(errno == 0 ? "EOF" : "read() error");
         return err;
     }
 
-    printf("client says: %.*s\n", len, &rbuf[4]);
+    printf("client says: %.*s\n", len, &readBuffer[4]);
 
     const char reply[] = "hi back to you!!!";
-    char wbuf[4 + sizeof(reply)];
+    char writeBuffer[4 + sizeof(reply)];
     len = (int32_t)strlen(reply);
-    memcpy(wbuf, &len, 4);
-    memcpy(&wbuf[4], reply, len);
-    return write_full(connfd, wbuf, len + 4);
+    memcpy(writeBuffer, &len, 4);
+    memcpy(&writeBuffer[4], reply, len);
+    return write_full(connfd, writeBuffer, len + 4);
 }
 
 int main()
