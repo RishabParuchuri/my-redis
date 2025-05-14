@@ -4,12 +4,25 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <vector>
 
 const size_t K_MAX_MSG = 4096;
+
+struct Conn
+{
+    int fd = -1;
+    // the purpose of the application
+    bool wantRead = false;
+    bool wantWrite = false;
+    bool wantClose = false;
+    // buffers for input and output
+    std::vector<uint8_t> incoming;
+    std::vector<uint8_t> outgoing;
+};
 
 static void msg(const char *msg)
 {
@@ -124,8 +137,52 @@ int main()
         die("listen()");
     }
 
+    // make a map of all the client connections
+    std::vector<Conn *> fdToConnection;
+
+    std::vector<struct pollfd> pollArgs;
+
     while (true)
     {
+        // empty the poll args vector
+        pollArgs.clear();
+
+        // insert the listening socket into the the vector
+        struct pollfd listening = {sockfd, POLLIN, 0};
+        pollArgs.push_back(listening);
+
+        // get all the connection sockets
+        for (Conn *conn : fdToConnection)
+        {
+            if (!conn)
+            {
+                continue;
+            }
+            struct pollfd conn_pollfd = {conn->fd, POLLERR, 0};
+            // set the proper poll flags
+            if (conn->wantRead)
+            {
+                conn_pollfd.events |= POLLIN;
+            }
+
+            if (conn->wantWrite)
+            {
+                conn_pollfd.events |= POLLOUT;
+            }
+            pollArgs.push_back(conn_pollfd);
+        }
+        // wait for readiness from sockets
+        int readyCount = poll(pollArgs.data(), (nfds_t)pollArgs.size(), -1);
+        if (readyCount < 0 && errno == EINTR)
+        {
+            continue;
+        }
+
+        if (readyCount < 0)
+        {
+            die("poll() error");
+        }
+
         // accept connections
         struct sockaddr_in6 client_addr = {};
         socklen_t addrlen = sizeof(client_addr);
