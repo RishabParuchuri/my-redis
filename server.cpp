@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <poll.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -36,75 +37,127 @@ static void die(const char *msg)
     abort();
 }
 
-static int32_t read_full(int fd, char *buffer, size_t n)
+static void setFdToNonBlocking(int fd)
 {
-    // Basically continuously decrement until whole stream is read
-    while (n > 0)
-    {
-        ssize_t bytesRead = read(fd, buffer, n);
-        if (bytesRead <= 0)
-        {
-            return -1;
-        }
-        assert((size_t)bytesRead <= n);
-        n -= (size_t)bytesRead;
-        buffer += (size_t)bytesRead;
-    }
-    return 0;
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
 }
 
-static int32_t write_full(int fd, char *buffer, size_t n)
+// append to the back
+static void
+buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len)
 {
-    while (n > 0)
-    {
-        ssize_t bytesRead = write(fd, buffer, n);
-        if (bytesRead <= 0)
-        {
-            return -1;
-        }
-        assert((size_t)bytesRead <= n);
-        n -= (size_t)bytesRead;
-        buffer += (size_t)bytesRead;
-    }
-    return 0;
+    buf.insert(buf.end(), data, data + len);
 }
 
-static int32_t request(int connfd)
+// remove from the front
+static void buf_consume(std::vector<uint8_t> &buf, size_t n)
 {
-    char readBuffer[4 + K_MAX_MSG];
-    errno = 0;
-    int32_t err = read_full(connfd, readBuffer, 4);
-    if (err)
-    {
-        msg(errno == 0 ? "EOF" : "read() error");
-        return err;
-    }
-
-    int32_t len = 0;
-    memcpy(&len, readBuffer, 4);
-    if (len > (int32_t)K_MAX_MSG)
-    {
-        msg("Message too long!");
-        return -1;
-    }
-
-    // get the body of the request
-    err = read_full(connfd, &readBuffer[4], len);
-    if (err)
-    {
-        msg(errno == 0 ? "EOF" : "read() error");
-        return err;
-    }
-
-    printf("client says: %.*s\n", len, &readBuffer[4]);
-
-    const char reply[] = "hi back to you!!!";
-    char writeBuffer[4 + sizeof(reply)];
-    len = (int32_t)strlen(reply);
-    memcpy(writeBuffer, &len, 4);
-    memcpy(&writeBuffer[4], reply, len);
-    return write_full(connfd, writeBuffer, len + 4);
+    buf.erase(buf.begin(), buf.begin() + n);
 }
+
+static Conn *handle_accept(int fd)
+{
+    // accept connection
+    struct sockaddr_in6 client_addr = {};
+    socklen_t addrlen = sizeof(client_addr);
+    int connfd = accept(fd, (struct sockaddr *)&client_addr, &addrlen);
+    if (connfd < 0)
+    {
+        return NULL;
+    }
+
+    setFdToNonBlocking(fd);
+    // create a `struct Conn`
+    Conn *conn = new Conn();
+    conn->fd = connfd;
+    conn->wantRead = true; // read the 1st request
+    return conn;
+}
+
+static void handle_read(Conn *conn)
+{
+    uint8_t buffer[64 * 1024];
+    ssize_t bytesRead = read(conn->fd, buffer, sizeof(buffer));
+    if (bytesRead < 0)
+    {
+        conn->wantClose = true;
+        return;
+    }
+    // add data to incoming buffer
+    buf_append(conn->incoming, buffer, (size_t)bytesRead);
+    // parse the buffer, process message, and remove from incoming buffer
+    try_one_request(conn);
+}
+
+// static int32_t read_full(int fd, char *buffer, size_t n)
+// {
+//     // Basically continuously decrement until whole stream is read
+//     while (n > 0)
+//     {
+//         ssize_t bytesRead = read(fd, buffer, n);
+//         if (bytesRead <= 0)
+//         {
+//             return -1;
+//         }
+//         assert((size_t)bytesRead <= n);
+//         n -= (size_t)bytesRead;
+//         buffer += (size_t)bytesRead;
+//     }
+//     return 0;
+// }
+
+// static int32_t write_full(int fd, char *buffer, size_t n)
+// {
+//     while (n > 0)
+//     {
+//         ssize_t bytesRead = write(fd, buffer, n);
+//         if (bytesRead <= 0)
+//         {
+//             return -1;
+//         }
+//         assert((size_t)bytesRead <= n);
+//         n -= (size_t)bytesRead;
+//         buffer += (size_t)bytesRead;
+//     }
+//     return 0;
+// }
+
+// static int32_t request(int connfd)
+// {
+//     char readBuffer[4 + K_MAX_MSG];
+//     errno = 0;
+//     int32_t err = read_full(connfd, readBuffer, 4);
+//     if (err)
+//     {
+//         msg(errno == 0 ? "EOF" : "read() error");
+//         return err;
+//     }
+
+//     int32_t len = 0;
+//     memcpy(&len, readBuffer, 4);
+//     if (len > (int32_t)K_MAX_MSG)
+//     {
+//         msg("Message too long!");
+//         return -1;
+//     }
+
+//     // get the body of the request
+//     err = read_full(connfd, &readBuffer[4], len);
+//     if (err)
+//     {
+//         msg(errno == 0 ? "EOF" : "read() error");
+//         return err;
+//     }
+
+//     printf("client says: %.*s\n", len, &readBuffer[4]);
+
+//     const char reply[] = "hi back to you!!!";
+//     char writeBuffer[4 + sizeof(reply)];
+//     len = (int32_t)strlen(reply);
+//     memcpy(writeBuffer, &len, 4);
+//     memcpy(&writeBuffer[4], reply, len);
+//     return write_full(connfd, writeBuffer, len + 4);
+// }
 
 int main()
 {
@@ -182,25 +235,59 @@ int main()
         {
             die("poll() error");
         }
-
-        // accept connections
-        struct sockaddr_in6 client_addr = {};
-        socklen_t addrlen = sizeof(client_addr);
-        int connfd = accept(sockfd, (struct sockaddr *)&client_addr, &addrlen);
-        if (connfd < 0)
+        // listening socket
+        if (pollArgs[0].revents)
         {
-            continue;
-        }
-
-        // implement business logic
-        while (true)
-        {
-            int32_t err = request(connfd);
-            if (err)
+            if (Conn *conn = handle_accept(sockfd))
             {
-                break;
+                if (fdToConnection.size() <= (size_t)conn->fd)
+                {
+                    fdToConnection.resize(conn->fd + 1);
+                }
+                fdToConnection[conn->fd] = conn;
             }
         }
-        close(connfd);
+        // goes through all the client connections
+        for (size_t i = 1; i < pollArgs.size(); ++i)
+        {
+            uint32_t ready = pollArgs[i].revents;
+            Conn *conn = fdToConnection[pollArgs[i].fd];
+            if (ready & POLLIN)
+            {
+                handle_read(conn);
+            }
+
+            if (ready & POLLOUT)
+            {
+                handle_write(conn);
+            }
+
+            if ((ready & POLLERR) || conn->wantClose)
+            {
+                (void)close(conn->fd);
+                fdToConnection[conn->fd] = NULL;
+                delete conn;
+            }
+        }
+
+        // // accept connections
+        // struct sockaddr_in6 client_addr = {};
+        // socklen_t addrlen = sizeof(client_addr);
+        // int connfd = accept(sockfd, (struct sockaddr *)&client_addr, &addrlen);
+        // if (connfd < 0)
+        // {
+        //     continue;
+        // }
+
+        // // implement business logic
+        // while (true)
+        // {
+        //     int32_t err = request(connfd);
+        //     if (err)
+        //     {
+        //         break;
+        //     }
+        // }
+        // close(connfd);
     }
 }
