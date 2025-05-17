@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <vector>
+#include <iostream>
 
 const size_t K_MAX_MSG = 4096;
 
@@ -74,6 +75,33 @@ static Conn *handle_accept(int fd)
     return conn;
 }
 
+static bool try_one_request(Conn *conn)
+{
+    // try to parse buffer
+    if (conn->incoming.size() < 4)
+    {
+        return false;
+    }
+    uint32_t len = 0;
+    memcpy(&len, conn->incoming.data(), 4);
+    if (4 + len > conn->incoming.size())
+    {
+        return false;
+    }
+    const uint8_t *request = &conn->incoming[4];
+
+    std::string msg(reinterpret_cast<const char *>(request), len);
+    std::cout << "Received message: " << msg << std::endl;
+    // process the parsed message.
+    // generate the response (echo)
+    buf_append(conn->outgoing, (const uint8_t *)&len, 4);
+    buf_append(conn->outgoing, request, len);
+
+    // remove the message from incoming
+    buf_consume(conn->incoming, 4 + len);
+    return true; // success
+}
+
 static void handle_read(Conn *conn)
 {
     uint8_t buffer[64 * 1024];
@@ -87,6 +115,29 @@ static void handle_read(Conn *conn)
     buf_append(conn->incoming, buffer, (size_t)bytesRead);
     // parse the buffer, process message, and remove from incoming buffer
     try_one_request(conn);
+    if (conn->outgoing.size() > 0)
+    {
+        // response
+        conn->wantRead = false;
+        conn->wantWrite = true;
+    }
+}
+
+static void handle_write(Conn *conn)
+{
+    assert(conn->outgoing.size() > 0);
+    ssize_t bytesWrote = write(conn->fd, conn->outgoing.data(), conn->outgoing.size());
+    if (bytesWrote < 0)
+    {
+        conn->wantClose = true;
+        return;
+    }
+    buf_consume(conn->outgoing, (size_t)bytesWrote);
+    if (conn->outgoing.size() == 0)
+    { // all data written
+        conn->wantRead = true;
+        conn->wantWrite = false;
+    }
 }
 
 // static int32_t read_full(int fd, char *buffer, size_t n)
