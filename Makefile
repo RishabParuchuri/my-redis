@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -O2 -g
+CXXFLAGS = -std=c++11 -Wall -Wextra -O2 -g
 
 all: server client
 

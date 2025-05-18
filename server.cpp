@@ -114,7 +114,9 @@ static void handle_read(Conn *conn)
     // add data to incoming buffer
     buf_append(conn->incoming, buffer, (size_t)bytesRead);
     // parse the buffer, process message, and remove from incoming buffer
-    try_one_request(conn);
+    while (try_one_request(conn))
+    {
+    };
     if (conn->outgoing.size() > 0)
     {
         // response
@@ -127,6 +129,10 @@ static void handle_write(Conn *conn)
 {
     assert(conn->outgoing.size() > 0);
     ssize_t bytesWrote = write(conn->fd, conn->outgoing.data(), conn->outgoing.size());
+    if (bytesWrote < 0 && errno == EAGAIN)
+    {
+        return;
+    }
     if (bytesWrote < 0)
     {
         conn->wantClose = true;
