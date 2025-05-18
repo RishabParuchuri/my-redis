@@ -6,9 +6,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <vector>
 
-const size_t K_MAX_MSG = 4096;
-
+const size_t K_MAX_MSG = 32 << 20;
 static void msg(const char *msg)
 {
     fprintf(stderr, "%s\n", msg);
@@ -20,7 +20,13 @@ static void die(const char *msg)
     abort();
 }
 
-static int32_t read_full(int fd, char *buf, size_t n)
+static void
+buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len)
+{
+    buf.insert(buf.end(), data, data + len);
+}
+
+static int32_t read_full(int fd, uint8_t *buf, size_t n)
 {
     // Basically continuously decrement until whole stream is read
     while (n > 0)
@@ -37,7 +43,7 @@ static int32_t read_full(int fd, char *buf, size_t n)
     return 0;
 }
 
-static int32_t write_full(int fd, char *buf, size_t n)
+static int32_t write_all(int fd, const uint8_t *buf, size_t n)
 {
     while (n > 0)
     {
@@ -53,39 +59,48 @@ static int32_t write_full(int fd, char *buf, size_t n)
     return 0;
 }
 
-static int32_t query(int fd, const char *text)
+static int32_t send_req(int fd, const uint8_t *text, size_t len)
 {
-    uint32_t len = (u_int32_t)strlen(text);
     if (len > K_MAX_MSG)
     {
         return -1;
     }
+    std::vector<uint8_t> wbuf;
+    buf_append(wbuf, (const uint8_t *)&len, 4);
+    buf_append(wbuf, text, len);
+    return write_all(fd, wbuf.data(), wbuf.size());
+}
 
-    // send request
-    char wbuf[4 + K_MAX_MSG];
-    memcpy(wbuf, &len, 4);
-    memcpy(&wbuf[4], text, len);
-    int32_t err = write_full(fd, wbuf, len + 4);
-    if (err)
-    {
-        return err;
-    }
-
-    char rbuf[4 + K_MAX_MSG + 1];
+static int32_t read_res(int fd)
+{
+    // 4 bytes header
+    std::vector<uint8_t> rbuf;
+    rbuf.resize(4);
     errno = 0;
-    err = read_full(fd, rbuf, 4);
+    int32_t err = read_full(fd, &rbuf[0], 4);
     if (err)
     {
-        msg(errno == 0 ? "EOF" : "read() error");
+        if (errno == 0)
+        {
+            msg("EOF");
+        }
+        else
+        {
+            msg("read() error");
+        }
         return err;
     }
-    memcpy(&len, rbuf, 4);
+
+    uint32_t len = 0;
+    memcpy(&len, rbuf.data(), 4);
     if (len > K_MAX_MSG)
     {
-        msg("message too long");
+        msg("too long");
         return -1;
     }
 
+    // reply body
+    rbuf.resize(4 + len);
     err = read_full(fd, &rbuf[4], len);
     if (err)
     {
@@ -93,7 +108,7 @@ static int32_t query(int fd, const char *text)
         return err;
     }
 
-    printf("server says: %.*s\n", len, &rbuf[4]);
+    printf("len:%u data:%.*s\n", len, len < 100 ? len : 100, &rbuf[4]);
     return 0;
 }
 
@@ -115,22 +130,29 @@ int main()
         die("connect()");
     }
 
-    // messages
-
-    err = query(sockfd, "Hello Server");
-    if (err)
+    // multiple pipelined requests
+    std::vector<std::string> query_list = {
+        "hello1",
+        "hello2",
+        "hello3",
+        std::string(K_MAX_MSG, 'z'),
+        "hello5",
+    };
+    for (const std::string &s : query_list)
     {
-        goto L_DONE;
+        int32_t err = send_req(sockfd, (uint8_t *)s.data(), s.size());
+        if (err)
+        {
+            goto L_DONE;
+        }
     }
-    err = query(sockfd, "Hello again Server");
-    if (err)
+    for (size_t i = 0; i < query_list.size(); ++i)
     {
-        goto L_DONE;
-    }
-    err = query(sockfd, "Ok bye Server");
-    if (err)
-    {
-        goto L_DONE;
+        int32_t err = read_res(sockfd);
+        if (err)
+        {
+            goto L_DONE;
+        }
     }
 
 L_DONE:
