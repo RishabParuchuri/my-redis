@@ -11,8 +11,17 @@
 #include <unistd.h>
 #include <vector>
 #include <iostream>
+#include <map>
 
-const size_t K_MAX_MSG = 4096;
+const size_t K_MAX_MSG = 32 << 20;
+static std::map<std::string, std::string> g_data;
+
+enum
+{
+    RES_OK = 0,
+    RES_ERR = 1, // error
+    RES_NX = 2,  // key not found
+};
 
 struct Conn
 {
@@ -24,6 +33,12 @@ struct Conn
     // buffers for input and output
     std::vector<uint8_t> incoming;
     std::vector<uint8_t> outgoing;
+};
+
+struct Response
+{
+    uint32_t status = 0;
+    std::vector<uint8_t> data;
 };
 
 static void msg(const char *msg)
@@ -75,6 +90,118 @@ static Conn *handle_accept(int fd)
     return conn;
 }
 
+static bool read_u32(const uint8_t *&cur, const uint8_t *end, uint32_t &out)
+{
+    if (cur + 4 > end)
+    {
+        return false;
+    }
+    memcpy(&out, cur, 4);
+    cur += 4;
+    return true;
+}
+
+static bool
+read_str(const uint8_t *&cur, const uint8_t *end, size_t n, std::string &out)
+{
+    if (cur + n > end)
+    {
+        return false;
+    }
+    out.assign(cur, cur + n);
+    cur += n;
+    return true;
+}
+
+static int32_t parse_request(const uint8_t *data, size_t size, std::vector<std::string> &out)
+{
+    const uint8_t *end = data + size;
+    uint32_t numStrings = 0;
+    if (!read_u32(data, end, numStrings))
+    {
+        return -1;
+    }
+    if (numStrings > K_MAX_MSG)
+    {
+        return -1;
+    }
+
+    while (out.size() < numStrings)
+    {
+        uint32_t len = 0;
+        if (!read_u32(data, end, len))
+        {
+            return -1;
+        }
+        out.push_back(std::string());
+        if (!read_str(data, end, len, out.back()))
+        {
+            return -1;
+        }
+    }
+    if (data != end)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static void make_response(uint32_t status, std::string_view data, std::vector<uint8_t> &out)
+{
+    uint32_t resp_len = 4 + (uint32_t)data.size();
+    buf_append(out, (const uint8_t *)&resp_len, 4);
+    buf_append(out, (const uint8_t *)&status, 4);
+    buf_append(out, (const uint8_t *)data.data(), data.size());
+}
+
+static void make_response(const Response &resp, std::vector<uint8_t> &out)
+{
+    uint32_t resp_len = 4 + (uint32_t)resp.data.size();
+    buf_append(out, (const uint8_t *)&resp_len, 4);
+    buf_append(out, (const uint8_t *)&resp.status, 4);
+    buf_append(out, resp.data.data(), resp.data.size());
+}
+
+static bool do_request(std::vector<std::string> &cmd, std::vector<uint8_t> &out)
+{
+    if (cmd.size() == 2 && cmd[0] == "get")
+    {
+        auto it = g_data.find(cmd[1]);
+        if (it == g_data.end())
+        {
+            make_response(RES_NX, "", out);
+        }
+        else
+        {
+            printf("get called: %s\n", it->second.c_str());
+            make_response(RES_OK, it->second, out); // direct write
+        }
+        return true;
+    }
+
+    Response resp;
+
+    if (cmd.size() == 3 && cmd[0] == "set")
+    {
+        g_data[cmd[1]].swap(cmd[2]);
+        printf("set called\n");
+        resp.status = RES_OK;
+    }
+    else if (cmd.size() == 2 && cmd[0] == "del")
+    {
+        g_data.erase(cmd[1]);
+        printf("del called\n");
+        resp.status = RES_OK;
+    }
+    else
+    {
+        resp.status = RES_ERR;
+    }
+
+    make_response(resp, out);
+    return true;
+}
+
 static bool try_one_request(Conn *conn)
 {
     // try to parse buffer
@@ -90,12 +217,15 @@ static bool try_one_request(Conn *conn)
     }
     const uint8_t *request = &conn->incoming[4];
 
-    std::string msg(reinterpret_cast<const char *>(request), len);
-    std::cout << "Received message: " << msg << std::endl;
-    // process the parsed message.
-    // generate the response (echo)
-    buf_append(conn->outgoing, (const uint8_t *)&len, 4);
-    buf_append(conn->outgoing, request, len);
+    std::vector<std::string> cmd;
+    if (parse_request(request, len, cmd) < 0)
+    {
+        conn->wantClose = true;
+        return false; // error
+    }
+    Response res;
+    do_request(cmd, conn->outgoing);
+    make_response(res, conn->outgoing);
 
     // remove the message from incoming
     buf_consume(conn->incoming, 4 + len);
