@@ -17,8 +17,6 @@ A high-performance, Redis-inspired in-memory key-value store engineered entirely
 my-redis/
 ├── client.cpp      # Command-line client
 ├── server.cpp      # TCP server
-├── protocol.hpp    # Protocol helpers
-├── buf.hpp         # Buffer utilities
 ├── Makefile        # Build automation
 ├── README.md       # You're reading this
 ```
