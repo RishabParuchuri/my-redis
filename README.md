@@ -5,11 +5,21 @@ A high-performance, Redis-inspired in-memory key-value store engineered entirely
 
 ## 🚀 Features
 
--  Event-driven architecture using `poll()` for scalable I/O
--  Custom length-prefixed binary protocol for minimal overhead
--  Core Redis-like commands: `GET`, `SET`, `DEL`
--  Zero-copy response pipeline for optimized performance
--  Fully self-contained C++ client for testing and interaction
+- 🧵 Event-driven architecture using `poll()` for scalable I/O  
+  Handles multiple client connections concurrently in a single thread using low-level polling.
+
+- 🔌 Built from scratch with raw socket programming  
+  No frameworks or libraries — just `socket()`, `bind()`, `accept()`, `read()`, and `write()`.
+
+- 💬 Custom length-prefixed binary protocol for minimal overhead  
+  Compact and efficient message framing designed for fast parsing.
+
+- 🧠 Core Redis-like commands: `GET`, `SET`, `DEL`  
+  Supports essential key-value operations with constant-time access.
+
+- 🛠 Fully self-contained C++ client for testing and interaction  
+  Easily test commands from the terminal using the included CLI client.
+
 
 ## 📁 Project Structure
 
