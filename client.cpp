@@ -2,11 +2,16 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
-
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <unistd.h>
+#include <arpa/inet.h>
+
 #include <vector>
+#include <string>
+#include <cstdlib>
+#include <iostream>
+#include <sstream>
 
 const size_t K_MAX_MSG = 4096;
 static void msg(const char *msg)
@@ -146,30 +151,61 @@ int main(int argc, char **argv)
 
     struct sockaddr_in6 addr = {};
     addr.sin6_family = AF_INET6;
-    addr.sin6_port = ntohs(1234);
-    addr.sin6_addr = in6addr_loopback;
+    addr.sin6_port = htons(1234);
+    if (inet_pton(AF_INET6, "::ffff:server", &addr.sin6_addr) <= 0)
+    {
+        die("invalid address");
+    }
+
     int32_t err = connect(sockfd, (const struct sockaddr *)&addr, sizeof(addr));
     if (err)
     {
         die("connect()");
     }
-    std::vector<std::string> cmd;
-    for (int i = 1; i < argc; ++i)
+
+    if (argc == 1)
     {
-        cmd.push_back(argv[i]);
+        std::string line;
+        while (true)
+        {
+            std::cout << "> ";
+            if (!std::getline(std::cin, line))
+                break;
+
+            std::istringstream iss(line);
+            std::vector<std::string> cmd;
+            std::string token;
+            while (iss >> token)
+            {
+                cmd.push_back(token);
+            }
+
+            if (cmd.empty())
+                continue;
+            if (cmd[0] == "exit" || cmd[0] == "quit")
+                break;
+
+            err = send_req(sockfd, cmd);
+            if (err)
+                break;
+
+            err = read_res(sockfd);
+            if (err)
+                break;
+        }
     }
-    err = send_req(sockfd, cmd);
-    if (err)
+    else
     {
-        goto L_DONE;
-    }
-    err = read_res(sockfd);
-    if (err)
-    {
-        goto L_DONE;
+        std::vector<std::string> cmd;
+        for (int i = 1; i < argc; ++i)
+        {
+            cmd.push_back(argv[i]);
+        }
+        err = send_req(sockfd, cmd);
+        if (!err)
+            read_res(sockfd);
     }
 
-L_DONE:
     close(sockfd);
     return 0;
 }
