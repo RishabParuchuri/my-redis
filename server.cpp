@@ -170,6 +170,7 @@ static bool do_request(std::vector<std::string> &cmd, std::vector<uint8_t> &out)
         if (it == g_data.end())
         {
             make_response(RES_NX, "", out);
+            printf("get called: Not found\n");
         }
         else
         {
@@ -223,9 +224,7 @@ static bool try_one_request(Conn *conn)
         conn->wantClose = true;
         return false; // error
     }
-    Response res;
     do_request(cmd, conn->outgoing);
-    make_response(res, conn->outgoing);
 
     // remove the message from incoming
     buf_consume(conn->incoming, 4 + len);
@@ -276,78 +275,9 @@ static void handle_write(Conn *conn)
     }
 }
 
-// static int32_t read_full(int fd, char *buffer, size_t n)
-// {
-//     // Basically continuously decrement until whole stream is read
-//     while (n > 0)
-//     {
-//         ssize_t bytesRead = read(fd, buffer, n);
-//         if (bytesRead <= 0)
-//         {
-//             return -1;
-//         }
-//         assert((size_t)bytesRead <= n);
-//         n -= (size_t)bytesRead;
-//         buffer += (size_t)bytesRead;
-//     }
-//     return 0;
-// }
-
-// static int32_t write_full(int fd, char *buffer, size_t n)
-// {
-//     while (n > 0)
-//     {
-//         ssize_t bytesRead = write(fd, buffer, n);
-//         if (bytesRead <= 0)
-//         {
-//             return -1;
-//         }
-//         assert((size_t)bytesRead <= n);
-//         n -= (size_t)bytesRead;
-//         buffer += (size_t)bytesRead;
-//     }
-//     return 0;
-// }
-
-// static int32_t request(int connfd)
-// {
-//     char readBuffer[4 + K_MAX_MSG];
-//     errno = 0;
-//     int32_t err = read_full(connfd, readBuffer, 4);
-//     if (err)
-//     {
-//         msg(errno == 0 ? "EOF" : "read() error");
-//         return err;
-//     }
-
-//     int32_t len = 0;
-//     memcpy(&len, readBuffer, 4);
-//     if (len > (int32_t)K_MAX_MSG)
-//     {
-//         msg("Message too long!");
-//         return -1;
-//     }
-
-//     // get the body of the request
-//     err = read_full(connfd, &readBuffer[4], len);
-//     if (err)
-//     {
-//         msg(errno == 0 ? "EOF" : "read() error");
-//         return err;
-//     }
-
-//     printf("client says: %.*s\n", len, &readBuffer[4]);
-
-//     const char reply[] = "hi back to you!!!";
-//     char writeBuffer[4 + sizeof(reply)];
-//     len = (int32_t)strlen(reply);
-//     memcpy(writeBuffer, &len, 4);
-//     memcpy(&writeBuffer[4], reply, len);
-//     return write_full(connfd, writeBuffer, len + 4);
-// }
-
 int main()
 {
+    msg("Server started");
     int sockfd = socket(AF_INET6, SOCK_STREAM, 0);
     if (sockfd < 0)
     {
@@ -456,25 +386,5 @@ int main()
                 delete conn;
             }
         }
-
-        // // accept connections
-        // struct sockaddr_in6 client_addr = {};
-        // socklen_t addrlen = sizeof(client_addr);
-        // int connfd = accept(sockfd, (struct sockaddr *)&client_addr, &addrlen);
-        // if (connfd < 0)
-        // {
-        //     continue;
-        // }
-
-        // // implement business logic
-        // while (true)
-        // {
-        //     int32_t err = request(connfd);
-        //     if (err)
-        //     {
-        //         break;
-        //     }
-        // }
-        // close(connfd);
     }
 }
