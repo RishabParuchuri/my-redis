@@ -25,6 +25,21 @@ static void die(const char *msg)
     abort();
 }
 
+const char *status_string(uint32_t code)
+{
+    switch (code)
+    {
+    case 0:
+        return "success";
+    case 1:
+        return "error";
+    case 2:
+        return "not found";
+    default:
+        return "unknown";
+    }
+}
+
 static int32_t read_full(int fd, uint8_t *buf, size_t n)
 {
     // Basically continuously decrement until whole stream is read
@@ -127,7 +142,7 @@ static int32_t read_res(int fd)
     memcpy(&rescode, &rbuf[4], 4);
 
     // print result
-    printf("status: %u\n", rescode);
+    printf("status: %s\n", status_string(rescode));
     printf("len: %u\n", len);
     if (len > 4)
     {
@@ -151,11 +166,8 @@ int main(int argc, char **argv)
 
     struct sockaddr_in6 addr = {};
     addr.sin6_family = AF_INET6;
-    addr.sin6_port = htons(1234);
-    if (inet_pton(AF_INET6, "::ffff:server", &addr.sin6_addr) <= 0)
-    {
-        die("invalid address");
-    }
+    addr.sin6_port = ntohs(1234);
+    addr.sin6_addr = in6addr_loopback;
 
     int32_t err = connect(sockfd, (const struct sockaddr *)&addr, sizeof(addr));
     if (err)
