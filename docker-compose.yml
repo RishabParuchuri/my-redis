@@ -1,0 +1,14 @@
+services:
+  server:
+    build: .
+    container_name: redis-server
+    ports:
+      - "1234:1234"
+    command: ./server
+
+  client:
+    build: .
+    container_name: redis-client
+    depends_on:
+      - server
+    entrypoint: ./client
